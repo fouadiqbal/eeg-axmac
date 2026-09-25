@@ -5,6 +5,7 @@ scikit-learn
 matplotlib
 PyYAML
 mne
+boto3
 moabb
 torch
 pytest

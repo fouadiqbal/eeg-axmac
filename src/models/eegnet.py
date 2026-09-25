@@ -80,6 +80,47 @@ class EEGNet(nn.Module):
         return self.classifier(x.flatten(start_dim=1))
 
 
+class PaperAlignedEEGNet82(nn.Module):
+    """Checkpoint-compatible 128-tap/8-pool variant used in the Kaggle audit.
+
+    Module names intentionally match the executed notebook so its saved fold
+    checkpoints can be loaded for quantization and multiplier sensitivity.
+    """
+
+    def __init__(self, n_channels: int = 64, n_samples: int = 480,
+                 n_classes: int = 4) -> None:
+        super().__init__()
+        if n_channels < 1 or n_samples < 64 or n_classes < 2:
+            raise ValueError("Invalid model dimensions")
+        self.n_channels = n_channels
+        self.n_samples = n_samples
+        self.temporal = nn.Conv2d(1, 8, (1, 128), padding="same", bias=False)
+        self.bn1 = nn.BatchNorm2d(8)
+        self.spatial = nn.Conv2d(8, 16, (n_channels, 1), groups=8, bias=False)
+        self.bn2 = nn.BatchNorm2d(16)
+        self.pool1 = nn.AvgPool2d((1, 8))
+        self.drop1 = nn.Dropout(0.2)
+        self.sep_depth = nn.Conv2d(16, 16, (1, 16), padding="same", groups=16, bias=False)
+        self.sep_point = nn.Conv2d(16, 16, 1, bias=False)
+        self.bn3 = nn.BatchNorm2d(16)
+        self.pool2 = nn.AvgPool2d((1, 8))
+        self.drop2 = nn.Dropout(0.2)
+        features = 16 * (n_samples // 8 // 8)
+        if features == 0:
+            raise ValueError("Input window too short")
+        self.classifier = nn.Linear(features, n_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.ndim != 4 or x.shape[1:] != (self.n_channels, 1, self.n_samples):
+            raise ValueError("Expected batch of (channels, 1, samples) EEG windows")
+        x = x.transpose(1, 2)
+        x = self.bn1(self.temporal(x))
+        x = self.drop1(self.pool1(torch.nn.functional.elu(self.bn2(self.spatial(x)))))
+        x = self.sep_point(self.sep_depth(x))
+        x = self.drop2(self.pool2(torch.nn.functional.elu(self.bn3(x))))
+        return self.classifier(x.flatten(1))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Inspect EEGNet configuration and output shape.")
     parser.add_argument("--channels", type=int, default=64)

@@ -160,15 +160,120 @@ def preprocess_eegmmidb(
     return output_dir
 
 
+def _read_bciiv2a_session(raw_dir: Path, subject: int, session: str) -> tuple[np.ndarray, np.ndarray]:
+    """Read one official GDF session with 22 EEG channels and cue-locked labels."""
+    import mne
+    from scipy.io import loadmat
+
+    if session not in ("T", "E") or subject not in range(1, 10):
+        raise ValueError("Expected subject 1-9 and session T or E")
+    path = raw_dir / f"A{subject:02d}{session}.gdf"
+    raw = mne.io.read_raw_gdf(path, preload=True, verbose="ERROR")
+    raw.pick_types(eeg=True, eog=False, stim=False)
+    if len(raw.ch_names) != 22 or raw.info["sfreq"] != 250:
+        raise ValueError(f"Unexpected BCI-IV-2a metadata for {path}: {len(raw.ch_names)} EEG channels")
+    raw.filter(0.5, 100.0, verbose="ERROR")
+    if session == "T":
+        event_id = {str(code): code for code in range(769, 773)}
+        events, _ = mne.events_from_annotations(raw, event_id=event_id, verbose="ERROR")
+        y = (events[:, -1] - 769).astype(np.int64)
+    else:
+        events, _ = mne.events_from_annotations(raw, event_id={"783": 783}, verbose="ERROR")
+        label_path = raw_dir / f"A{subject:02d}E.mat"
+        y = np.asarray(loadmat(label_path)["classlabel"]).reshape(-1).astype(np.int64) - 1
+    if len(events) != 288 or len(y) != 288 or set(y.tolist()) != {0, 1, 2, 3}:
+        raise ValueError(f"Expected 288 labeled four-class cues in {path}; got {len(events)} events and {len(y)} labels")
+    # The cue is t=0: retain 0.5 s before it and 3.996 s afterwards.
+    epochs = mne.Epochs(
+        raw, events, event_id=event_id if session == "T" else {"783": 783},
+        tmin=-0.5, tmax=(1125 - 1) / 250 - 0.5, baseline=None,
+        preload=True, picks="eeg", reject_by_annotation=False, verbose="ERROR",
+    )
+    x = epochs.get_data().astype(np.float32)[:, :, None, :]
+    if x.shape != (288, 22, 1, 1125) or not np.isfinite(x).all():
+        raise ValueError(f"Invalid BCI-IV-2a epochs for {path}: {x.shape}")
+    return x, y
+
+
+def preprocess_bciiv2a(data_dir: Path, output_dir: Path, seed: int = 42) -> Path:
+    """Cache subject CV on training sessions and a separate session-E test set.
+
+    Every outer fold uses only session T. The session-E cache uses statistics
+    fitted on all T sessions and is reserved for a separate cross-session test.
+    """
+    import torch
+
+    raw_dir = data_dir / "raw" / "bciiv2a"
+    subjects = list(range(1, 10))
+    training = {subject: _read_bciiv2a_session(raw_dir, subject, "T") for subject in subjects}
+    evaluation = {subject: _read_bciiv2a_session(raw_dir, subject, "E") for subject in subjects}
+    folds = _subject_folds(subjects, seed)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    split_dir = data_dir / "splits"
+    split_dir.mkdir(parents=True, exist_ok=True)
+    for fold_id, fold in enumerate(folds):
+        (split_dir / f"bciiv2a_{fold_id}.json").write_text(
+            json.dumps({"dataset": "bciiv2a", "source_session": "T", "seed": seed, "fold": fold_id, **fold}, indent=2),
+            encoding="utf-8",
+        )
+        mean, std = _normalization_stats([training[s][0] for s in fold["train_subjects"]])
+        payload: dict[str, Any] = {
+            "dataset": "bciiv2a", "seed": seed, "fold": fold_id,
+            "mean": torch.from_numpy(mean), "std": torch.from_numpy(std),
+            "class_names": ("left_hand", "right_hand", "feet", "tongue"),
+        }
+        for split_name, ids in (("train", fold["train_subjects"]), ("validation", fold["validation_subjects"])):
+            x = np.concatenate([((training[s][0] - mean) / std).astype(np.float32) for s in ids])
+            y = np.concatenate([training[s][1] for s in ids])
+            payload[f"{split_name}_x"] = torch.from_numpy(x)
+            payload[f"{split_name}_y4"] = torch.from_numpy(y)
+            mask = y < 2
+            payload[f"{split_name}_x2"] = torch.from_numpy(x[mask])
+            payload[f"{split_name}_y2"] = torch.from_numpy(y[mask])
+            payload[f"{split_name}_subjects"] = torch.from_numpy(
+                np.concatenate([np.full(len(training[s][1]), s, dtype=np.int16) for s in ids])
+            )
+            print(f"BCI fold {fold_id} {split_name}: X={x.shape}, classes={np.bincount(y,minlength=4).tolist()}", flush=True)
+        torch.save(payload, output_dir / f"bciiv2a_fold{fold_id}.pt")
+
+    # Separate protocol: train on all first sessions, test on all second sessions.
+    mean, std = _normalization_stats([training[s][0] for s in subjects])
+    session_payload: dict[str, Any] = {"dataset": "bciiv2a", "seed": seed, "protocol": "T_to_E",
+                                       "mean": torch.from_numpy(mean), "std": torch.from_numpy(std)}
+    for name, source in (("train", training), ("validation", evaluation)):
+        x = np.concatenate([((source[s][0] - mean) / std).astype(np.float32) for s in subjects])
+        y = np.concatenate([source[s][1] for s in subjects])
+        session_payload[f"{name}_x"] = torch.from_numpy(x)
+        session_payload[f"{name}_y4"] = torch.from_numpy(y)
+        session_payload[f"{name}_subjects"] = torch.from_numpy(
+            np.concatenate([np.full(len(source[s][1]), s, dtype=np.int16) for s in subjects])
+        )
+        print(f"BCI {name} session: X={x.shape}, classes={np.bincount(y,minlength=4).tolist()}", flush=True)
+    torch.save(session_payload, output_dir / "bciiv2a_T_to_E.pt")
+    (split_dir / "bciiv2a_T_to_E.json").write_text(
+        json.dumps({"dataset": "bciiv2a", "seed": seed, "train_session": "T", "test_session": "E",
+                    "subjects": subjects}, indent=2), encoding="utf-8",
+    )
+    return output_dir
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", choices=["eegmmidb"], default="eegmmidb")
+    parser.add_argument("--dataset", choices=["eegmmidb", "bciiv2a"], default="eegmmidb")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed/eegmmidb"))
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--subjects", type=int, nargs="*", help="Optional eligible subject subset (at least five).")
     args = parser.parse_args()
-    preprocess_eegmmidb(args.data_dir, args.output_dir, args.seed, args.subjects)
+    if args.dataset == "bciiv2a":
+        if args.subjects is not None:
+            parser.error("--subjects is currently supported only for EEGMMIDB")
+        target = args.output_dir
+        if target == Path("data/processed/eegmmidb"):
+            target = Path("data/processed/bciiv2a")
+        preprocess_bciiv2a(args.data_dir, target, args.seed)
+    else:
+        preprocess_eegmmidb(args.data_dir, args.output_dir, args.seed, args.subjects)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,7 @@
+# Raw and processed EEG data
+/data/
+*.pt
+*.pth
+*.npz
+__pycache__/
+.pytest_cache/

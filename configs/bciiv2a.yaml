@@ -1,0 +1,14 @@
+dataset: bciiv2a
+source: https://www.bbci.de/competition/iv/download/
+evaluation_labels: https://www.bbci.de/competition/iv/results/ds2a/true_labels.zip
+subjects: 9
+eeg_channels: 22
+eog_channels_discarded: 3
+sampling_rate_hz: 250
+bandpass_hz: [0.5, 100.0]
+epoch_start_seconds: -0.5
+epoch_samples: 1125
+classes: [left_hand, right_hand, feet, tongue]
+protocols: [subject_cv_on_T, train_T_test_E]
+normalization: per_channel_training_session_or_subjects_only
+seed: 42

@@ -1,0 +1,23 @@
+baseline:
+  model: eegnet82_128
+  epochs: 100
+  batch_size: 16
+  optimizer: adam
+  learning_rates:
+    epochs_1_to_20: 0.01
+    epochs_21_to_50: 0.001
+    epochs_51_to_100: 0.0001
+int8:
+  calibration_fraction: 0.10
+  activation_percentile: 99.9
+  activation_scheme: symmetric_per_tensor
+  weight_scheme: symmetric_per_output_channel
+approximate_multiplier:
+  library: EvoApprox8b
+  source_commit: ad6bb819bed0c641e26c882f06796efcfe406960
+  selected_circuits: 50
+  input_mapping: signed_magnitude_through_unsigned_circuit
+  accumulator: int32_exact
+  layers: [temporal, spatial, separable, dense]
+  delta_reference: exact_int8_lut_at_same_layer
+  architecture_mean_error: unmeasured_until_propagation_model

@@ -4,6 +4,9 @@ Reproducible EEG motor-imagery baselines and approximate-multiplier sensitivity
 experiments. EEGMMIDB has a measured five-fold exact-arithmetic baseline and
 one additional EEGNet training variant. BCI-IV-2a and approximate-MAC
 sensitivity experiments remain unverified.
+The five-fold EEGNet-4,2 run is also complete in Kaggle Version 2. Further
+experiments are paused at the user's request; the saved version contains the
+completed notebook output and fold checkpoint files.
 
 The executed research notebook is
 [`notebooks/eeg_cnn_approx_mac_kaggle_run.ipynb`](notebooks/eeg_cnn_approx_mac_kaggle_run.ipynb).
@@ -26,6 +29,10 @@ with a T4 GPU; the local notebook is an exported copy for inspection in VS Code.
   executed as diagnostics. Neither method improves classification by itself.
   The resulting figures, five-fold comparison, and pooled confusion matrix are
   in [`results/figures`](results/figures).
+- EEGNet-4,2 completed five held-out-subject folds with accuracies 64.44%,
+  66.50%, 62.11%, 63.40%, and 62.63%. Its window-weighted accuracy is
+  **63.82%** over 9,184 windows. The pooled macro-F1 and three-model plot
+  have not yet been computed, so this is a provisional model comparison.
 - The published 65.07% four-class figure uses a different subject exclusion and
   trial extraction protocol. The supplied prompt excludes 88, 89, 92, and 100;
   the [authors' loader](https://github.com/MHersche/eegnet-based-embedded-bci/blob/master/get_data.py)

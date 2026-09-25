@@ -26,6 +26,53 @@ EXPLANATIONS = {
     15: ("Phase A + B audit | Compare dataset scale without inventing scores", "**Purpose:** Plot published cohort and sensor specifications alongside the analysis-window sizes used in this study. **Expected output:** A 300 dpi comparison of 105 selected EEGMMIDB versus 9 BCI IV 2a subjects, 64 versus 22 EEG sensors, and the derived input sample counts. BCI IV 2a was not trained here, so the figure is descriptive rather than a performance or hardware-energy comparison. EvoApprox8b is a multiplier library, not an EEG dataset. Sources: [PhysioNet EEGMMIDB](https://physionet.org/content/eegmmidb/1.0.0/), [BCI IV 2a downloads](https://bbci.de/competition/iv/download/), [BNCI description](https://bnci-horizon-2020.eu/database/data-sets), and [EvoApprox8b](https://github.com/ehw-fit/evoapprox8b)."),
 }
 
+PARALLEL_EDF_SOURCE = '''# Step 6 — acquire and validate all 735 EDF files from the official PhysioNet S3 mirror.
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+import boto3, time
+from botocore import UNSIGNED
+from botocore.config import Config
+ROOT = Path('/kaggle/working/eeg-axmac')
+EDF_ROOT = ROOT/'data/raw/MNE-eegbci-data/files/eegmmidb/1.0.0'
+EDF_ROOT.mkdir(parents=True, exist_ok=True)
+EXCLUDED = {88,89,92,100}
+SUBJECTS = [s for s in range(1,110) if s not in EXCLUDED]
+RUNS = [1,4,6,8,10,12,14]
+EXPECTED = len(SUBJECTS)*len(RUNS)
+def valid_edf(path):
+    return path.exists() and path.stat().st_size > 100_000 and path.open('rb').read(1) == b'0'
+s3 = boto3.client('s3', config=Config(signature_version=UNSIGNED, max_pool_connections=20,
+    connect_timeout=20, read_timeout=120, retries={'max_attempts':5}))
+jobs = [(subject,run) for subject in SUBJECTS for run in RUNS]
+print(f'Official PhysioNet S3 mirror: {EXPECTED} requested; '
+      f'{sum(valid_edf(EDF_ROOT/f"S{s:03d}"/f"S{s:03d}R{r:02d}.edf") for s,r in jobs)} already valid.', flush=True)
+def fetch_edf(subject,run):
+    folder = EDF_ROOT/f'S{subject:03d}'
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder/f'S{subject:03d}R{run:02d}.edf'
+    if valid_edf(target): return target
+    partial = target.with_suffix('.edf.part')
+    key = f'eegmmidb/1.0.0/S{subject:03d}/S{subject:03d}R{run:02d}.edf'
+    try:
+        s3.download_file('physionet-open', key, str(partial))
+        if not valid_edf(partial): raise IOError(f'Invalid EDF downloaded: {key}')
+        partial.replace(target)
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
+    return target
+started = time.time()
+with ThreadPoolExecutor(max_workers=16) as pool:
+    futures = [pool.submit(fetch_edf,s,r) for s,r in jobs]
+    for done,future in enumerate(as_completed(futures),1):
+        future.result()
+        if done%100==0 or done==EXPECTED:
+            print(f'Validated {done}/{EXPECTED} EDFs; elapsed={time.time()-started:.1f}s',flush=True)
+valid_count = sum(valid_edf(EDF_ROOT/f'S{s:03d}'/f'S{s:03d}R{r:02d}.edf') for s,r in jobs)
+print(f'Acquisition validation: {valid_count}/{EXPECTED} valid EDFs',flush=True)
+assert valid_count == EXPECTED
+'''
+
 
 def main() -> None:
     src, dst, figure_dir = map(Path, sys.argv[1:4])
@@ -48,6 +95,9 @@ def main() -> None:
             code = "".join(cell.get("source", []))
             if not code.strip():
                 continue
+            if code.startswith("# Step 6") and "PhysioNet" in code:
+                cell["source"] = PARALLEL_EDF_SOURCE.splitlines(keepends=True)
+                code = PARALLEL_EDF_SOURCE
             title, description = EXPLANATIONS.get(
                 index,
                 (
@@ -78,6 +128,7 @@ def main() -> None:
         "paper_aligned_accuracy_comparison.png": "Accuracy comparison and feature-importance diagnostics",
         "anova_bandpower_and_input_attribution.png": "Train-only ANOVA bandpower map",
         "paper_aligned_confusion_matrix.png": "Class-level error analysis for the paper-aligned variant",
+        "three_model_eegmmidb_comparison.png": "Three-model EEGMMIDB comparison",
     }
     for filename, section in wanted.items():
         for position, cell in enumerate(cleaned):

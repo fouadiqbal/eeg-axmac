@@ -1,0 +1,27 @@
+{
+  "verified_cases": 1000,
+  "paired_records": 21000,
+  "unique_subjects": 105,
+  "most_sensitive_by_fold": {
+    "0": "separable",
+    "1": "separable",
+    "2": "separable",
+    "3": "spatial",
+    "4": "separable"
+  },
+  "least_sensitive_by_fold": {
+    "0": "dense",
+    "1": "dense",
+    "2": "temporal",
+    "3": "temporal",
+    "4": "dense"
+  },
+  "significant_drops": {
+    "dense": 0,
+    "separable": 18,
+    "spatial": 10,
+    "temporal": 0
+  },
+  "historical_bci_sweep": "unvalidated_baseline",
+  "physical_design_gate": "NO-GO until validated BCI sensitivity and review"
+}

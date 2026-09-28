@@ -34,7 +34,7 @@ def load_metadata(cache_dir: Path) -> dict[str, dict]:
 
 
 def select_circuits(metadata: dict[str, dict], count: int = 50) -> list[str]:
-    """Select deterministic power/error quantiles from the 505 circuits.
+    """Select deterministic power/error quantiles from the 500 mul8 circuits.
 
     The library is already a multi-metric Pareto collection. Sampling both
     power and reported mean relative error avoids taking an arbitrary first

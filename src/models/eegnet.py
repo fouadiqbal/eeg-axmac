@@ -81,10 +81,11 @@ class EEGNet(nn.Module):
 
 
 class PaperAlignedEEGNet82(nn.Module):
-    """Checkpoint-compatible 128-tap/8-pool variant used in the Kaggle audit.
+    """Wang et al. released EEGNet-8,2 configuration.
 
-    Module names intentionally match the executed notebook so its saved fold
-    checkpoints can be loaded for quantization and multiplier sensitivity.
+    Spatial depthwise kernels are projected to max L2 norm 1 and each dense
+    output kernel to max L2 norm 0.25 after every optimizer update. These are
+    the exact values/layers used in the authors' released ``models.py``.
     """
 
     def __init__(self, n_channels: int = 64, n_samples: int = 480,
@@ -95,14 +96,17 @@ class PaperAlignedEEGNet82(nn.Module):
         self.n_channels = n_channels
         self.n_samples = n_samples
         self.temporal = nn.Conv2d(1, 8, (1, 128), padding="same", bias=False)
-        self.bn1 = nn.BatchNorm2d(8)
+        # The released Keras model uses BatchNormalization(axis=1) at all
+        # three sites. Its input is channels-last, so the first BN is per EEG
+        # electrode and the next two are over their singleton spatial axis.
+        self.bn1 = nn.BatchNorm2d(n_channels)
         self.spatial = nn.Conv2d(8, 16, (n_channels, 1), groups=8, bias=False)
-        self.bn2 = nn.BatchNorm2d(16)
+        self.bn2 = nn.BatchNorm2d(1)
         self.pool1 = nn.AvgPool2d((1, 8))
         self.drop1 = nn.Dropout(0.2)
         self.sep_depth = nn.Conv2d(16, 16, (1, 16), padding="same", groups=16, bias=False)
         self.sep_point = nn.Conv2d(16, 16, 1, bias=False)
-        self.bn3 = nn.BatchNorm2d(16)
+        self.bn3 = nn.BatchNorm2d(1)
         self.pool2 = nn.AvgPool2d((1, 8))
         self.drop2 = nn.Dropout(0.2)
         features = 16 * (n_samples // 8 // 8)
@@ -110,14 +114,30 @@ class PaperAlignedEEGNet82(nn.Module):
             raise ValueError("Input window too short")
         self.classifier = nn.Linear(features, n_classes)
 
+    @torch.no_grad()
+    def apply_max_norm_constraints(self) -> None:
+        """Apply Keras ``max_norm`` constraints to spatial and dense weights."""
+        for weight, limit, axis in (
+            (self.spatial.weight, 1.0, (1, 2, 3)),
+            # Keras Dense kernel is [input, output], max_norm(axis=0).
+            # PyTorch Linear stores [output, input], hence axis=1 here.
+            (self.classifier.weight, 0.25, (1,)),
+        ):
+            norms = torch.linalg.vector_norm(weight, ord=2, dim=axis, keepdim=True).clamp_min(1e-12)
+            weight.mul_(torch.clamp(limit / norms, max=1.0))
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.ndim != 4 or x.shape[1:] != (self.n_channels, 1, self.n_samples):
             raise ValueError("Expected batch of (channels, 1, samples) EEG windows")
         x = x.transpose(1, 2)
-        x = self.bn1(self.temporal(x))
-        x = self.drop1(self.pool1(torch.nn.functional.elu(self.bn2(self.spatial(x)))))
+        x = self.temporal(x)
+        x = self.bn1(x.transpose(1, 2)).transpose(1, 2)
+        x = self.spatial(x)
+        x = self.bn2(x.transpose(1, 2)).transpose(1, 2)
+        x = self.drop1(self.pool1(torch.nn.functional.elu(x)))
         x = self.sep_point(self.sep_depth(x))
-        x = self.drop2(self.pool2(torch.nn.functional.elu(self.bn3(x))))
+        x = self.bn3(x.transpose(1, 2)).transpose(1, 2)
+        x = self.drop2(self.pool2(torch.nn.functional.elu(x)))
         return self.classifier(x.flatten(1))
 
 

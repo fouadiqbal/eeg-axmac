@@ -1,0 +1,8 @@
+{
+  "mean_accuracy": 0.7110310014234644,
+  "std_accuracy": 0.11734551997886071,
+  "mean_macro_f1": 0.7101896194591076,
+  "reference": 0.724,
+  "within_3pp": true,
+  "protocol_qualification": "near reproduction; comparator-specific training code not released"
+}

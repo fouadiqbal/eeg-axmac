@@ -11,3 +11,33 @@ classes: [left_hand, right_hand, rest, feet]
 outer_folds: 5
 normalization: per_channel_training_subjects_only
 seed: 42
+
+reference_targets:
+  wang_eegnet_global:
+    2class: 82.43
+    3class: 75.07
+    4class: 65.07
+  hernandez_ruiz_eegnet42_global_sstl_percent:
+    ds1:
+      2class: [83.15, 87.46]
+      3class: [75.74, 83.26]
+      4class: [65.75, 74.31]
+    ds2:
+      2class: [82.52, 93.10]
+      3class: [75.34, 93.21]
+      4class: [65.56, 89.23]
+  acceptance_band_pp: 3.0
+
+analysis_matrix:
+  class_counts: [2, 3, 4]
+  modes: [global, sstl]
+  models:
+    - eegnet82_table
+    - eegnet42_ds1
+    - eegnet42_ds2
+downsampling:
+  factors: [1, 2]
+  method_ds2: scipy.signal.resample_poly_up1_down2
+  sampling_rate_hz: {ds1: 160, ds2: 80}
+  samples_per_3s_epoch: {ds1: 480, ds2: 240}
+  normalization: fitted_separately_from_outer_training_subjects_at_each_rate

@@ -1,0 +1,12 @@
+{
+  "model": "released fixed EEG-TCNet",
+  "protocol": "T->E, official artifact rejection and scaler",
+  "n_subjects": 9,
+  "accuracy_mean": 0.7734633298800317,
+  "accuracy_std": 0.11577472726408373,
+  "macro_f1_mean": 0.7718961031757607,
+  "reference": 0.7735,
+  "delta_pp": -0.003667011996821845,
+  "within_3pp": true,
+  "validates_historical_eegnet_sweep": false
+}

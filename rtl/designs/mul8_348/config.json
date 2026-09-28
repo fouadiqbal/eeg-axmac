@@ -1,0 +1,8 @@
+{
+  "DESIGN_NAME": "signed_mul8_cell",
+  "VERILOG_FILES": "dir::signed_mul8_cell.v",
+  "CLOCK_PORT": "clk",
+  "CLOCK_PERIOD": 10,
+  "FP_CORE_UTIL": 30,
+  "RUN_KLAYOUT_DRC": false
+}

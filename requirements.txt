@@ -3,8 +3,9 @@ pandas
 scipy
 scikit-learn
 matplotlib
-PyYAML
+pyyaml
 mne
+pyedflib
 boto3
 moabb
 torch

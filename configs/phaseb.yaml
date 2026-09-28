@@ -1,12 +1,11 @@
 baseline:
-  model: eegnet82_128
-  epochs: 100
-  batch_size: 16
-  optimizer: adam
-  learning_rates:
-    epochs_1_to_20: 0.01
-    epochs_21_to_50: 0.001
-    epochs_51_to_100: 0.0001
+  model: eegnet82_table
+  selected_reference_row: EEGNet-8,2 4class_global pooled_oof 62.30%
+  training_record_source: results/baseline_accuracy_report.csv
+  target_reference_accuracy_percent: 65.07
+  acceptance_band_percentage_points: 3.0
+  primary_checkpoint: Kaggle artifact not present in this local checkout
+  note: Use only a checkpoint trained and evaluated under the same documented configuration; the 65.30% 128-tap run is excluded.
 int8:
   calibration_fraction: 0.10
   activation_percentile: 99.9

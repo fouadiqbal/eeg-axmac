@@ -6,3 +6,9 @@
 __pycache__/
 .pytest_cache/
 /tmp/
+/manuscript/
+/docs/paper_results_package.md
+/docs/findings_summary.md
+/docs/manuscript_results_inventory.md
+/results/manuscript/
+/.tmp_*

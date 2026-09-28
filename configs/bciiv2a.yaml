@@ -12,3 +12,9 @@ classes: [left_hand, right_hand, feet, tongue]
 protocols: [subject_cv_on_T, train_T_test_E]
 normalization: per_channel_training_session_or_subjects_only
 seed: 42
+
+reference_targets:
+  paper: Ingolfsson et al. EEG-TCNet
+  global_fixed_4class_percent: 77.35
+  subject_specific_hyperparameter_search_4class_percent: 83.84
+reproduction_status: deferred_until_EEG_TCNet_protocol_is_implemented

@@ -73,12 +73,32 @@ print(f'Acquisition validation: {valid_count}/{EXPECTED} valid EDFs',flush=True)
 assert valid_count == EXPECTED
 '''
 
+PHASE_AUDIT = '''## Phase audit against the supplied execution prompt
+
+This audit distinguishes completed measurements from verified data preparation and unfinished experiments. A local implementation does not count as an executed result.
+
+| Requested item | Evidence currently recorded | Status |
+|---|---|---|
+| EEGMMIDB acquisition and four-class preprocessing | 735/735 EDF files, 105 selected subjects, 9,184 windows, finite `(N,64,1,480)` tensors and five disjoint subject folds | Complete for the prompt-selected protocol |
+| EEGNet-8,2 baseline | Five held-out subject folds; pooled accuracy 62.30%, macro-F1 62.36% | Complete; below the 65.07% reference, whose cohort/window protocol differs |
+| 128-tap EEGNet variant | Same five EEGMMIDB folds; pooled accuracy 65.30%, macro-F1 65.42% | Complete; architecture and training settings changed together |
+| EEGNet-4,2 | Five same-cohort folds; window-weighted accuracy 63.82% | Complete; pooled macro-F1 is not yet recorded |
+| BCI IV 2a acquisition and preprocessing | Official 18 GDF files and labels, five subject-fold caches `(N,22,1,1125)`, separate T-to-E cache; EOG channels explicitly excluded | Data preparation verified on Kaggle; model evaluation is not yet recorded in this export |
+| Dataset and model visual comparisons | Dataset-scale figure and same-fold, three-model EEGMMIDB accuracy figure | Complete; dataset comparison is descriptive, not cross-dataset accuracy |
+| INT8 calibration, SS-TL, EvoApprox8b correctness and approximate convolution | Source implementations exist; no verified Kaggle results are recorded | Incomplete |
+| Circuit sensitivity, error correlations, and deployment PPA | No completed sweep, measured target hardware latency, energy, area, or power | Incomplete |
+
+**Interpretation.** EEGMMIDB is the only dataset with model scores recorded here. BCI IV 2a now has verified acquisition and preprocessing but no score in this exported notebook. EvoApprox8b is an arithmetic-circuit library, not an EEG dataset. Neither dataset-scale bars nor model accuracy alone establish deployment energy or latency.
+'''
+
 
 def main() -> None:
     src, dst, figure_dir = map(Path, sys.argv[1:4])
     notebook = json.loads(src.read_text(encoding="utf-8"))
     cleaned = []
     for index, cell in enumerate(notebook["cells"]):
+        if cell["cell_type"] == "markdown" and "## Phase audit against the supplied execution prompt" in "".join(cell.get("source", [])):
+            cell["source"] = PHASE_AUDIT.splitlines(keepends=True)
         if cell["cell_type"] == "markdown" and "## Accuracy audit" in "".join(cell.get("source", [])):
             protocol_note = (
                 "\n**Cohort and window caveat.** The supplied execution prompt excludes subjects "
@@ -123,23 +143,27 @@ def main() -> None:
     # Paper figures already generated on Kaggle are copied from notebook output.
     figure_dir.mkdir(parents=True, exist_ok=True)
     wanted = {
-        "eegmmidb_5fold_oof_summary.png": "Summarize the five-fold baseline",
-        "dataset_scale_comparison.png": "Compare dataset scale without inventing scores",
-        "paper_aligned_accuracy_comparison.png": "Accuracy comparison and feature-importance diagnostics",
-        "anova_bandpower_and_input_attribution.png": "Train-only ANOVA bandpower map",
-        "paper_aligned_confusion_matrix.png": "Class-level error analysis for the paper-aligned variant",
-        "three_model_eegmmidb_comparison.png": "Three-model EEGMMIDB comparison",
+        "eegmmidb_5fold_oof_summary.png": ("Summarize the five-fold baseline", 0),
+        "dataset_scale_comparison.png": ("Compare dataset scale without inventing scores", 0),
+        "paper_aligned_accuracy_comparison.png": ("Accuracy comparison and feature-importance diagnostics", 0),
+        "anova_bandpower_and_input_attribution.png": ("Train-only ANOVA bandpower map", 0),
+        "paper_aligned_confusion_matrix.png": ("Class-level error analysis for the paper-aligned variant", 0),
+        "verified_dataset_comparison.png": ("Verified dataset and model comparisons", 0),
+        "three_model_eegmmidb_comparison.png": ("Verified dataset and model comparisons", 1),
     }
-    for filename, section in wanted.items():
+    for filename, (section, image_index) in wanted.items():
         for position, cell in enumerate(cleaned):
             if cell["cell_type"] != "markdown" or section not in "".join(cell.get("source", [])):
                 continue
             for later in cleaned[position + 1 :]:
                 if later["cell_type"] == "code":
-                    for output in later.get("outputs", []):
-                        png = output.get("data", {}).get("image/png")
-                        if png:
-                            (figure_dir / filename).write_bytes(base64.b64decode("".join(png)))
+                    figures = [output.get("data", {}).get("image/png")
+                               for output in later.get("outputs", [])
+                               if output.get("data", {}).get("image/png")]
+                    if image_index < len(figures):
+                        (figure_dir / filename).write_bytes(
+                            base64.b64decode("".join(figures[image_index]))
+                        )
                     break
             break
 

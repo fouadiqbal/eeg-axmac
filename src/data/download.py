@@ -9,6 +9,7 @@ from urllib.request import urlretrieve
 from zipfile import ZipFile
 
 EXCLUDED_SUBJECTS = {88, 89, 92, 100}
+WANG_EXCLUDED_SUBJECTS = {88, 92, 100, 104}
 EEGMMIDB_RUNS = (1, 4, 6, 8, 10, 12, 14)
 BCIIV2A_GDF_URL = "https://www.bbci.de/competition/download/competition_iv/BCICIV_2a_gdf.zip"
 BCIIV2A_LABEL_URL = "https://www.bbci.de/competition/iv/results/ds2a/true_labels.zip"
@@ -19,8 +20,13 @@ def eligible_subjects() -> list[int]:
     return [subject for subject in range(1, 110) if subject not in EXCLUDED_SUBJECTS]
 
 
+def wang_eligible_subjects() -> list[int]:
+    """Subject set in MHersche et al.'s released ``get_data.py`` loader."""
+    return [subject for subject in range(1, 110) if subject not in WANG_EXCLUDED_SUBJECTS]
+
+
 def download_eegmmidb(data_dir: Path, subjects: list[int] | None = None,
-                     workers: int = 16) -> Path:
+                     workers: int = 16, protocol: str = "project") -> Path:
     """Fetch the selected EDFs from PhysioNet's official public S3 mirror.
 
     Existing EDFs are checked and reused. Independent files download with a
@@ -33,10 +39,14 @@ def download_eegmmidb(data_dir: Path, subjects: list[int] | None = None,
 
     if workers < 1 or workers > 32:
         raise ValueError("workers must be between 1 and 32")
-    selected = eligible_subjects() if subjects is None else sorted(set(subjects))
-    invalid = sorted(set(selected) - set(eligible_subjects()))
+    if protocol not in ("project", "wang_repo"):
+        raise ValueError("protocol must be 'project' or 'wang_repo'")
+    allowed = set(eligible_subjects() if protocol == "project" else wang_eligible_subjects())
+    selected = sorted(allowed) if subjects is None else sorted(set(subjects))
+    invalid = sorted(set(selected) - allowed)
     if invalid:
-        raise ValueError(f"Subjects must be between 1 and 109 and exclude {sorted(EXCLUDED_SUBJECTS)}: {invalid}")
+        exclusions = sorted(EXCLUDED_SUBJECTS if protocol == "project" else WANG_EXCLUDED_SUBJECTS)
+        raise ValueError(f"Subjects must be between 1 and 109 and exclude {exclusions}: {invalid}")
     if not selected:
         raise ValueError("At least one subject must be selected.")
 
@@ -139,6 +149,7 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=Path("data/raw"))
     parser.add_argument("--subjects", type=int, nargs="*", help="Optional subject subset for smoke runs.")
     parser.add_argument("--workers", type=int, default=16, help="Parallel EDF transfers for EEGMMIDB (1-32).")
+    parser.add_argument("--protocol", choices=("project", "wang_repo"), default="project")
     args = parser.parse_args()
     if args.dataset == "bciiv2a":
         if args.subjects is not None:
@@ -146,8 +157,8 @@ def main() -> None:
         location = download_bciiv2a(args.data_dir)
         print(f"BCI-IV-2a acquisition complete: {location}")
     else:
-        location = download_eegmmidb(args.data_dir, args.subjects, args.workers)
-        n_subjects = len(args.subjects) if args.subjects is not None else len(eligible_subjects())
+        location = download_eegmmidb(args.data_dir, args.subjects, args.workers, args.protocol)
+        n_subjects = len(args.subjects) if args.subjects is not None else len(eligible_subjects() if args.protocol == "project" else wang_eligible_subjects())
         print(f"EEGMMIDB acquisition complete: {n_subjects} subjects, {n_subjects * len(EEGMMIDB_RUNS)} run files; cache: {location}")
 
 
